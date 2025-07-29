@@ -1,0 +1,71 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_USER    = "navneet78"
+        IMAGE_NAME     = "staticweb"
+        IMAGE_TAG      = "v1.0"
+        FULL_IMAGE     = "${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+        META_FILE      = "build-info.json"
+    }
+
+    triggers {
+        githubPush()
+    }
+
+    stages {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "docker build -t ${FULL_IMAGE} ."
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
+                    sh '''
+                        echo "$PASS" | docker login -u "$USER" --password-stdin
+                        docker push ${FULL_IMAGE}
+                        docker logout
+                    '''
+                }
+            }
+        }
+
+        stage('Generate Metadata') {
+            steps {
+                script {
+                    def commit = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    def timestamp = sh(script: 'date -u +"%Y-%m-%dT%H:%M:%SZ"', returnStdout: true).trim()
+                    writeFile file: META_FILE, text: """{
+  "image": "${FULL_IMAGE}",
+  "tag": "${IMAGE_TAG}",
+  "commit": "${commit}",
+  "timestamp": "${timestamp}"
+}"""
+                }
+            }
+        }
+
+        stage('Trigger Deploy Job') {
+            steps {
+                build job: 'static-web-deploy',
+                      parameters: [string(name: 'IMAGE_TAG', value: "${IMAGE_TAG}")]
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: "${META_FILE}", fingerprint: true
+        }
+    }
+}

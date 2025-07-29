@@ -1,0 +1,34 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: 'v1.0')
+    }
+
+    environment {
+        DOCKER_USER    = "navneet78"
+        IMAGE_NAME     = "staticweb"
+        FULL_IMAGE     = "${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+        CONTAINER_NAME = "staticweb_container"
+    }
+
+    stages {
+        stage('Stop Existing Container') {
+            steps {
+                sh '''
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+                '''
+            }
+        }
+
+        stage('Pull and Run New Container') {
+            steps {
+                sh '''
+                    docker pull ${FULL_IMAGE}
+                    docker run -d --name ${CONTAINER_NAME} -p 8080:80 ${FULL_IMAGE}
+                '''
+            }
+        }
+    }
+}
